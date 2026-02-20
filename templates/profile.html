@@ -1,0 +1,60 @@
+{% extends 'layout.html' %}
+{% block title %}My Profile{% endblock %}
+{% block content %}
+
+<h2>My Profile</h2>
+
+<fieldset>
+  <legend>Account Information</legend>
+  <form method="POST">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+    <label>Username:</label>
+    <input type="text" name="username" value="{{ username }}" disabled>
+
+    <label>Primary Email:</label>
+    <input type="email" name="email" value="{{ email }}">
+
+    <label>Discord Webhook URL:</label>
+    <input type="text" name="discord_webhook" value="{{ webhook_url }}" placeholder="https://discord.com/api/webhooks/...">
+    <small>Get notified on Discord when new emails arrive. Leave empty to disable.</small>
+
+    <button type="submit">Update Profile</button>
+  </form>
+</fieldset>
+
+<!-- Two-Factor Authentication -->
+<fieldset style="margin-top: 20px;">
+  <legend>Two-Factor Authentication (2FA)</legend>
+  {% if has_2fa %}
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+      <span class="material-icons-round" style="color: var(--success); font-size: 22px;">verified_user</span>
+      <span style="font-weight: 600; color: var(--success);">2FA is enabled</span>
+    </div>
+    <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
+      Your account is protected with TOTP-based two-factor authentication.
+    </p>
+    <form method="POST" action="{{ url_for('disable_2fa') }}" id="disable-2fa-form">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <label>Enter password to disable 2FA:</label>
+      <input type="password" name="password" required placeholder="Your current password" style="max-width: 300px;">
+      <button type="submit" class="button danger" style="margin-top: 8px;"
+              onclick="return confirm('Are you sure you want to disable 2FA? Your account will be less secure.');">
+        <span class="material-icons-round" style="font-size: 16px;">security</span> Disable 2FA
+      </button>
+    </form>
+  {% else %}
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+      <span class="material-icons-round" style="color: var(--text-muted); font-size: 22px;">shield</span>
+      <span style="font-weight: 500; color: var(--text-muted);">2FA is not enabled</span>
+    </div>
+    <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
+      Add an extra layer of security to your account by enabling two-factor authentication using an authenticator app.
+    </p>
+    <a href="{{ url_for('setup_2fa') }}" class="button" style="display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
+      <span class="material-icons-round" style="font-size: 16px;">security</span> Setup 2FA
+    </a>
+  {% endif %}
+</fieldset>
+
+{% endblock %}

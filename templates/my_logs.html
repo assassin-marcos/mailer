@@ -1,0 +1,78 @@
+{% extends 'layout.html' %}
+{% block title %}My Sent Emails{% endblock %}
+{% block content %}
+<div class="container">
+    <h2>Sent Emails by {{ current_user.id }}</h2>
+    <input type="text" id="search" placeholder="Search logs...">
+    <button id="clearLogs" class="button danger">Clear My Logs</button>
+    <table border="1" cellpadding="6" id="logsTable">
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Domain</th>
+                <th>Email Sent To</th>
+                <th>Sent From</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <div id="pagination"></div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    let currentPage = 1;
+    const perPage = 20;
+
+    function loadLogs(page, search = '') {
+        fetch(`/get_my_logs?page=${page}&search=${encodeURIComponent(search)}`)
+            .then(response => response.json())
+            .then(data => {
+                const tbody = document.querySelector('#logsTable tbody');
+                tbody.innerHTML = data.logs.length ? '' : '<tr><td colspan="4">No emails sent yet.</td></tr>';
+                data.logs.forEach(log => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td>${log[0]}</td><td>${log[1]}</td><td>${log[2]}</td><td>${log[3]}</td>`;
+                    tbody.appendChild(row);
+                });
+                updatePagination(data.total, data.current_page);
+            });
+    }
+
+    function updatePagination(total, current) {
+        const pages = Math.ceil(total / perPage);
+        const pagination = document.getElementById('pagination');
+        pagination.innerHTML = '';
+        for (let i = 1; i <= pages; i++) {
+            const button = document.createElement('button');
+            button.textContent = i;
+            button.className = `button ${i === current ? 'active' : ''}`;
+            button.onclick = () => {
+                currentPage = i;
+                loadLogs(i, document.getElementById('search').value);
+            };
+            pagination.appendChild(button);
+        }
+    }
+
+    document.getElementById('search').addEventListener('input', () => {
+        currentPage = 1;
+        loadLogs(currentPage, document.getElementById('search').value);
+    });
+
+    document.getElementById('clearLogs').addEventListener('click', () => {
+        if (confirm('Are you sure you want to clear your logs?')) {
+            fetch('/clear_my_logs', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        loadLogs(1);
+                    }
+                });
+        }
+    });
+
+    loadLogs(currentPage);
+});
+</script>
+{% endblock %}

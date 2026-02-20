@@ -1,0 +1,381 @@
+{% extends 'layout.html' %}
+{% block title %}Stats{% endblock %}
+{% block content %}
+
+<h2>Statistics Dashboard</h2>
+
+<!-- Date Range Filter & Reset -->
+<fieldset style="margin-bottom: 16px;">
+  <legend>Filters</legend>
+  <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+    <div>
+      <label style="font-size: 12px; margin-bottom: 2px;">From Date</label>
+      <input type="date" id="date-from" style="padding: 6px 10px; font-size: 13px;">
+    </div>
+    <div>
+      <label style="font-size: 12px; margin-bottom: 2px;">To Date</label>
+      <input type="date" id="date-to" style="padding: 6px 10px; font-size: 13px;">
+    </div>
+    <button type="button" id="apply-filter-btn" class="button small">
+      <span class="material-icons-round" style="font-size: 14px;">filter_alt</span> Apply
+    </button>
+    <button type="button" id="clear-filter-btn" class="button small outline">Clear</button>
+    <div style="flex: 1;"></div>
+    <button type="button" id="reset-stats-btn" class="button small danger">
+      <span class="material-icons-round" style="font-size: 14px;">delete_sweep</span> Reset All Stats
+    </button>
+  </div>
+</fieldset>
+
+<div id="stats-loading" class="spinner"></div>
+<div id="stats-content" style="display: none;">
+
+  <!-- Overview Cards -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon" style="background: var(--primary-ghost); color: var(--primary);">
+        <span class="material-icons-round">send</span>
+      </div>
+      <div class="stat-info">
+        <span class="stat-value" id="stat-total-sent">0</span>
+        <span class="stat-label">Total Emails Sent</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background: var(--success-bg); color: var(--success);">
+        <span class="material-icons-round">reply_all</span>
+      </div>
+      <div class="stat-info">
+        <span class="stat-value" id="stat-total-responses">0</span>
+        <span class="stat-label">Responses Received</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background: #fef3c7; color: #d97706;">
+        <span class="material-icons-round">percent</span>
+      </div>
+      <div class="stat-info">
+        <span class="stat-value" id="stat-response-rate">0%</span>
+        <span class="stat-label">Response Rate</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background: #dbeafe; color: #2563eb;">
+        <span class="material-icons-round">today</span>
+      </div>
+      <div class="stat-info">
+        <span class="stat-value" id="stat-sent-today">0</span>
+        <span class="stat-label">Sent Today</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Daily Activity Chart -->
+  <fieldset>
+    <legend>Last 7 Days Activity</legend>
+    <div id="daily-chart" class="daily-chart"></div>
+  </fieldset>
+
+  <!-- Credential Usage -->
+  <fieldset>
+    <legend>Credential Daily Usage</legend>
+    <div id="cred-usage"></div>
+  </fieldset>
+
+  <!-- Email Open Tracking -->
+  <fieldset>
+    <legend>Email Open Tracking</legend>
+    <div id="open-tracking-summary" style="margin-bottom: 16px;">
+      <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="stat-card">
+          <div class="stat-icon" style="background: #e0e7ff; color: #4f46e5;">
+            <span class="material-icons-round">track_changes</span>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="stat-tracked">0</span>
+            <span class="stat-label">Tracked Emails</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background: #dcfce7; color: #16a34a;">
+            <span class="material-icons-round">visibility</span>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="stat-opened">0</span>
+            <span class="stat-label">Opened</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background: #fef3c7; color: #d97706;">
+            <span class="material-icons-round">analytics</span>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="stat-open-rate">0%</span>
+            <span class="stat-label">Open Rate</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+      <small style="color: var(--text-muted);">Enable open tracking via the checkbox on the dashboard when sending.</small>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <label style="font-size: 12px; margin: 0; white-space: nowrap;">Per page:</label>
+        <select id="opens-per-page" style="padding: 4px 8px; font-size: 12px; margin: 0; width: auto;">
+          <option value="10" selected>10</option>
+          <option value="25">25</option>
+        </select>
+        <button id="refresh-opens-btn" class="button small outline" type="button">Refresh</button>
+      </div>
+    </div>
+    <table id="opens-table">
+      <thead>
+        <tr>
+          <th>Recipient</th>
+          <th>Domain</th>
+          <th>Opens</th>
+          <th>Last Opened</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p id="no-opens" style="display:none; color: var(--text-muted); padding: 12px;">No open tracking data yet. Enable tracking on the dashboard to start.</p>
+    <div id="opens-pagination" style="margin-top: 10px; text-align: center;"></div>
+  </fieldset>
+
+  <!-- Per-Domain Stats -->
+  <fieldset>
+    <legend>Top Domains (by emails sent)</legend>
+    <table id="domain-table">
+      <thead>
+        <tr>
+          <th>Domain</th>
+          <th>Sent</th>
+          <th>Responses</th>
+          <th>Rate</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p id="no-domains" style="display:none; color: var(--text-muted); padding: 12px;">No data yet.</p>
+  </fieldset>
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+    function loadStats() {
+        var dateFrom = document.getElementById('date-from').value;
+        var dateTo = document.getElementById('date-to').value;
+        var url = '/get_stats';
+        var params = [];
+        if (dateFrom) params.push('from=' + dateFrom);
+        if (dateTo) params.push('to=' + dateTo);
+        if (params.length) url += '?' + params.join('&');
+
+        document.getElementById('stats-loading').style.display = 'block';
+        document.getElementById('stats-content').style.display = 'none';
+
+        fetch(url)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                document.getElementById('stats-loading').style.display = 'none';
+                document.getElementById('stats-content').style.display = 'block';
+
+                // Overview
+                document.getElementById('stat-total-sent').textContent = data.total_sent;
+                document.getElementById('stat-total-responses').textContent = data.total_responses;
+                document.getElementById('stat-response-rate').textContent = data.response_rate + '%';
+                document.getElementById('stat-sent-today').textContent = data.sent_today;
+
+                // Daily chart
+                var chartDiv = document.getElementById('daily-chart');
+                chartDiv.innerHTML = '';
+                var maxCount = Math.max.apply(null, data.daily_stats.map(function(d) { return d.count; }));
+                if (maxCount === 0) maxCount = 1;
+                data.daily_stats.forEach(function(day) {
+                    var bar = document.createElement('div');
+                    bar.className = 'chart-bar-row';
+                    var pct = (day.count / maxCount) * 100;
+                    var label = day.date.split('-').slice(1).join('/');
+                    bar.innerHTML =
+                        '<span class="chart-label">' + label + '</span>' +
+                        '<div class="chart-bar-track"><div class="chart-bar-fill" style="width:' + pct + '%"></div></div>' +
+                        '<span class="chart-value">' + day.count + '</span>';
+                    chartDiv.appendChild(bar);
+                });
+
+                // Credential usage
+                var credDiv = document.getElementById('cred-usage');
+                credDiv.innerHTML = '';
+                if (data.cred_stats.length === 0) {
+                    credDiv.innerHTML = '<p style="color: var(--text-muted);">No credentials.</p>';
+                } else {
+                    data.cred_stats.forEach(function(cred) {
+                        var item = document.createElement('div');
+                        item.className = 'cred-usage-item';
+                        var color = cred.pct > 80 ? 'var(--danger)' : cred.pct > 50 ? '#d97706' : 'var(--success)';
+                        item.innerHTML =
+                            '<div class="cred-usage-header">' +
+                                '<span>' + cred.email + '</span>' +
+                                '<span>' + cred.used_today + ' / ' + cred.limit + '</span>' +
+                            '</div>' +
+                            '<div class="cred-usage-bar-track">' +
+                                '<div class="cred-usage-bar-fill" style="width:' + cred.pct + '%; background:' + color + '"></div>' +
+                            '</div>' +
+                            '<small style="margin:0;">' + cred.remaining + ' remaining today</small>';
+                        credDiv.appendChild(item);
+                    });
+                }
+
+                // Domain table
+                var tbody = document.querySelector('#domain-table tbody');
+                tbody.innerHTML = '';
+                if (data.domain_stats.length === 0) {
+                    document.getElementById('domain-table').style.display = 'none';
+                    document.getElementById('no-domains').style.display = 'block';
+                } else {
+                    document.getElementById('domain-table').style.display = '';
+                    document.getElementById('no-domains').style.display = 'none';
+                    data.domain_stats.forEach(function(d) {
+                        var row = document.createElement('tr');
+                        row.innerHTML =
+                            '<td>' + d.domain + '</td>' +
+                            '<td>' + d.sent + '</td>' +
+                            '<td>' + d.responses + '</td>' +
+                            '<td>' + d.rate + '%</td>';
+                        tbody.appendChild(row);
+                    });
+                }
+
+                // Load open tracking
+                loadOpenStats(1);
+            })
+            .catch(function(err) {
+                document.getElementById('stats-loading').style.display = 'none';
+                document.getElementById('stats-content').innerHTML = '<p style="color:var(--danger);">Error loading stats.</p>';
+            });
+    }
+
+    function loadOpenStats(page) {
+        var perPage = document.getElementById('opens-per-page').value || 10;
+        fetch('/open_stats?page=' + page + '&per_page=' + perPage)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                // Summary cards
+                document.getElementById('stat-tracked').textContent = data.summary.total_tracked;
+                document.getElementById('stat-opened').textContent = data.summary.total_opened;
+                document.getElementById('stat-open-rate').textContent = data.summary.open_rate + '%';
+
+                var tbody = document.querySelector('#opens-table tbody');
+                tbody.innerHTML = '';
+                if (data.stats.length === 0) {
+                    document.getElementById('opens-table').style.display = 'none';
+                    document.getElementById('no-opens').style.display = 'block';
+                } else {
+                    document.getElementById('opens-table').style.display = '';
+                    document.getElementById('no-opens').style.display = 'none';
+                    data.stats.forEach(function(s) {
+                        var row = document.createElement('tr');
+                        var statusIcon = s.opened
+                            ? '<span style="color:var(--success);" class="material-icons-round" title="Opened">visibility</span>'
+                            : '<span style="color:var(--text-muted);" class="material-icons-round" title="Not opened">visibility_off</span>';
+                        row.innerHTML =
+                            '<td>' + s.recipient + '</td>' +
+                            '<td>' + s.domain + '</td>' +
+                            '<td style="text-align:center;">' + statusIcon + ' ' + s.open_count + '</td>' +
+                            '<td>' + (s.opened_at || '<span style="color:var(--text-muted);">\u2014</span>') + '</td>';
+                        tbody.appendChild(row);
+                    });
+                }
+
+                // Pagination
+                var pagDiv = document.getElementById('opens-pagination');
+                pagDiv.innerHTML = '';
+                var totalPages = Math.ceil(data.total / data.per_page);
+                if (totalPages > 1) {
+                    // Prev button
+                    if (data.current_page > 1) {
+                        var prevBtn = document.createElement('button');
+                        prevBtn.textContent = '\u2190 Prev';
+                        prevBtn.className = 'button small outline';
+                        prevBtn.style.margin = '0 3px';
+                        prevBtn.addEventListener('click', function() { loadOpenStats(data.current_page - 1); });
+                        pagDiv.appendChild(prevBtn);
+                    }
+
+                    // Page numbers
+                    var startPage = Math.max(1, data.current_page - 3);
+                    var endPage = Math.min(totalPages, startPage + 6);
+                    for (var p = startPage; p <= endPage; p++) {
+                        (function(pg) {
+                            var btn = document.createElement('button');
+                            btn.textContent = pg;
+                            btn.className = 'button small' + (pg === data.current_page ? '' : ' outline');
+                            btn.style.margin = '0 2px';
+                            if (pg !== data.current_page) {
+                                btn.addEventListener('click', function() { loadOpenStats(pg); });
+                            }
+                            pagDiv.appendChild(btn);
+                        })(p);
+                    }
+
+                    // Next button
+                    if (data.current_page < totalPages) {
+                        var nextBtn = document.createElement('button');
+                        nextBtn.textContent = 'Next \u2192';
+                        nextBtn.className = 'button small outline';
+                        nextBtn.style.margin = '0 3px';
+                        nextBtn.addEventListener('click', function() { loadOpenStats(data.current_page + 1); });
+                        pagDiv.appendChild(nextBtn);
+                    }
+
+                    // Page info
+                    var info = document.createElement('span');
+                    info.style.cssText = 'margin-left: 10px; font-size: 12px; color: var(--text-muted);';
+                    info.textContent = 'Page ' + data.current_page + ' of ' + totalPages + ' (' + data.total + ' total)';
+                    pagDiv.appendChild(info);
+                }
+            })
+            .catch(function() {});
+    }
+
+    // Event listeners
+    document.getElementById('apply-filter-btn').addEventListener('click', loadStats);
+
+    document.getElementById('clear-filter-btn').addEventListener('click', function() {
+        document.getElementById('date-from').value = '';
+        document.getElementById('date-to').value = '';
+        loadStats();
+    });
+
+    document.getElementById('refresh-opens-btn').addEventListener('click', function() { loadOpenStats(1); });
+
+    document.getElementById('opens-per-page').addEventListener('change', function() { loadOpenStats(1); });
+
+    document.getElementById('reset-stats-btn').addEventListener('click', function() {
+        if (!confirm('Are you sure you want to reset ALL statistics?\n\nThis will permanently delete:\n- All sent email logs\n- All response records\n- All open tracking data\n\nThis action cannot be undone.')) return;
+        if (!confirm('Final confirmation: Delete all statistics data?')) return;
+
+        fetch('/reset_stats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                alert('All statistics have been reset.');
+                loadStats();
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(function() { alert('Error resetting statistics.'); });
+    });
+
+    // Initial load
+    loadStats();
+});
+</script>
+
+{% endblock %}

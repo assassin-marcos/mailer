@@ -1,0 +1,26 @@
+{% extends 'layout.html' %}
+{% block title %}Export Data{% endblock %}
+{% block content %}
+
+<h2>Export Response Data</h2>
+<p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 20px;">
+  Export matched response data — domains sent to, email addresses, and responses received.
+  Only data where incoming emails match sent email addresses is included.
+</p>
+
+<fieldset>
+  <legend>Download Options</legend>
+  <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+    <a href="{{ url_for('export_csv') }}" class="button">
+      <span class="material-icons-round" style="font-size: 18px;">table_chart</span>
+      Export as CSV
+    </a>
+    <a href="{{ url_for('export_json') }}" class="button outline">
+      <span class="material-icons-round" style="font-size: 18px;">code</span>
+      Export as JSON
+    </a>
+  </div>
+  <small style="margin-top: 12px;">Files include: domain sent to, email sent to, sender used, sent date, response from, response subject, response preview, response date, and match timestamp.</small>
+</fieldset>
+
+{% endblock %}

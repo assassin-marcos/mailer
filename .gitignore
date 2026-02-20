@@ -1,0 +1,14 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.db
+*.db-wal
+*.db-shm
+*.csv.bak
+logs/*.csv
+logs/*.log
+output/
+*.env
+new 6

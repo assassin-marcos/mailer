@@ -1,0 +1,24 @@
+{% extends 'layout.html' %}
+{% block title %}Two-Factor Authentication{% endblock %}
+{% block content %}
+
+<h2>Two-Factor Authentication</h2>
+
+<fieldset>
+  <legend>Enter Your 2FA Code</legend>
+  <form method="POST">
+    <p style="color: var(--text-muted); margin-bottom: 16px;">Open your authenticator app and enter the 6-digit code.</p>
+
+    <label>Authentication Code:</label>
+    <input type="text" name="totp_code" required placeholder="000000" maxlength="6" pattern="\d{6}"
+           autocomplete="one-time-code" inputmode="numeric"
+           style="letter-spacing: 10px; font-size: 24px; text-align: center; font-weight: 700; max-width: 280px;">
+
+    <button type="submit" class="send-btn" style="margin-top: 12px;">Verify</button>
+  </form>
+  <p style="margin-top: 16px; text-align: center;">
+    <a href="{{ url_for('login') }}" style="font-size: 13px;">&larr; Back to Login</a>
+  </p>
+</fieldset>
+
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends 'layout.html' %}
+{% block title %}User Management{% endblock %}
+{% block content %}
+
+<h2>User Management</h2>
+
+{% for user in users %}
+  <div class="user-card" id="user-{{ user.username }}">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+      <div>
+        <strong>{{ user.username }}</strong>
+        <span class="role-badge {{ 'role-admin' if user.role == 'admin' else 'role-user' }}">{{ user.role }}</span>
+        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+          <span class="material-icons-round" style="font-size: 13px; vertical-align: middle;">schedule</span>
+          Last active: {{ user.last_active }}
+        </div>
+      </div>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <button onclick="sendOTP('{{ user.username }}')" class="button small outline" title="Send password reset OTP">
+          <span class="material-icons-round" style="font-size: 14px;">lock_reset</span> Reset Password
+        </button>
+        {% if not user.is_protected %}
+          <button onclick="deleteUser('{{ user.username }}')" class="button danger small">Delete User</button>
+        {% endif %}
+      </div>
+    </div>
+    <div id="otp-status-{{ user.username }}" style="display: none; margin-top: 8px; padding: 8px 12px; border-radius: 8px; font-size: 12px;"></div>
+    <h4>Credentials ({{ user.credentials|length }})</h4>
+    {% if user.credentials %}
+      <ul>
+        {% for email in user.credentials %}
+          <li>{{ email }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p style="color: var(--text-muted); font-size: 13px;">No credentials assigned.</p>
+    {% endif %}
+  </div>
+{% endfor %}
+
+{% if not users %}
+  <p style="color: var(--text-muted);">No users found.</p>
+{% endif %}
+
+<p style="margin-top: 16px; font-size: 13px; color: var(--text-muted);">
+  <span class="material-icons-round" style="font-size: 14px; vertical-align: middle;">info</span>
+  Users can reset their password at <a href="{{ url_for('reset_with_otp') }}">/reset_with_otp</a> using the OTP sent to their email.
+</p>
+
+<script>
+function deleteUser(username) {
+    if (!confirm("Delete user: " + username + "? This will also delete all their credentials, logs, and cached data.")) return;
+    fetch('/delete-user/' + username, { method: 'POST', headers: {'Content-Type': 'application/json'} })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (data.success) {
+                var el = document.getElementById('user-' + username);
+                if (el) el.remove();
+            } else {
+                alert(data.error || 'Failed to delete user.');
+            }
+        })
+        .catch(function() { alert('Error deleting user.'); });
+}
+
+function sendOTP(username) {
+    if (!confirm("Send a password reset OTP to " + username + "'s email?")) return;
+    var statusDiv = document.getElementById('otp-status-' + username);
+    statusDiv.style.display = 'block';
+    statusDiv.style.background = 'var(--surface-2)';
+    statusDiv.style.border = '1px solid var(--border)';
+    statusDiv.innerHTML = '<span class="material-icons-round" style="font-size:14px;vertical-align:middle;">sync</span> Sending OTP...';
+
+    fetch('/admin_send_otp', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username: username})
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (data.success) {
+            statusDiv.style.background = 'var(--success-bg)';
+            statusDiv.style.border = '1px solid var(--success)';
+            statusDiv.style.color = '#065f46';
+            statusDiv.innerHTML = '<span class="material-icons-round" style="font-size:14px;vertical-align:middle;">check_circle</span> ' + data.message;
+        } else {
+            statusDiv.style.background = 'var(--danger-bg)';
+            statusDiv.style.border = '1px solid var(--danger)';
+            statusDiv.style.color = '#991b1b';
+            statusDiv.innerHTML = '<span class="material-icons-round" style="font-size:14px;vertical-align:middle;">error</span> ' + (data.error || 'Failed to send OTP');
+        }
+    })
+    .catch(function() {
+        statusDiv.style.background = 'var(--danger-bg)';
+        statusDiv.style.border = '1px solid var(--danger)';
+        statusDiv.style.color = '#991b1b';
+        statusDiv.innerHTML = 'Error sending OTP.';
+    });
+}
+</script>
+
+{% endblock %}

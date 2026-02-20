@@ -1,0 +1,17 @@
+{% extends 'layout.html' %}
+{% block title %}Login{% endblock %}
+{% block content %}
+  <h2>Login</h2>
+  <form method="POST">
+    <label>Username:</label>
+    <input type="text" name="username" required>
+
+    <label>Password:</label>
+    <input type="password" name="password" required>
+
+    <button type="submit">Login</button>
+  </form>
+  <p style="text-align: center; margin-top: 16px;">
+    <a href="{{ url_for('reset_with_otp') }}" style="font-size: 13px;">Forgot Password?</a>
+  </p>
+{% endblock %}

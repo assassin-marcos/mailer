@@ -1,0 +1,232 @@
+{% extends 'layout.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<h2>Email Sender</h2>
+
+<form id="email-form">
+<div class="dashboard-grid">
+
+  <!-- LEFT COLUMN: Main sending options -->
+  <div class="dashboard-left">
+
+    <!-- Email Template & Sender Name -->
+    <fieldset>
+      <legend>Template & Sender Identity</legend>
+      <label>Email Template:</label>
+      <select name="template_id" id="template-select">
+        {% for tmpl in templates %}
+          <option value="{{ tmpl.id }}" data-sender="{{ tmpl.sender_name }}" {{ 'selected' if tmpl.is_default }}>
+            {{ tmpl.name }}{% if tmpl.is_default %} (Default){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      <small>Select a template or <a href="{{ url_for('templates_page') }}">manage templates</a>.</small>
+
+      <label>Sender Display Name:</label>
+      <input type="text" name="sender_name" id="sender-name-input" placeholder="e.g., Security Researcher">
+      <small>Override the template's sender name. Leave empty to use the template default.</small>
+    </fieldset>
+
+    <!-- Target Domains -->
+    <fieldset>
+      <legend>Target Domains</legend>
+      <label>Domains (one per line or comma-separated):</label>
+      <textarea name="domains" rows="4" placeholder="example.com&#10;other.org&#10;third.net"></textarea>
+      <label>Or upload a .txt file with domains:</label>
+      <input type="file" name="domain_file" accept=".txt">
+    </fieldset>
+
+    <!-- Direct Email Addresses -->
+    <fieldset>
+      <legend>Direct Email Addresses (Optional)</legend>
+      <label>Upload a .txt file with email addresses:</label>
+      <input type="file" name="email_file" accept=".txt">
+      <small>These bypass username@domain generation and are sent directly.</small>
+    </fieldset>
+
+    <!-- Custom Usernames -->
+    <fieldset>
+      <legend>Custom Usernames (Optional)</legend>
+      <label>Additional usernames (comma-separated):</label>
+      <input type="text" name="custom_usernames" placeholder="ceo, cto, hr, founder">
+    </fieldset>
+
+    <!-- Send Options -->
+    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 10px;">
+      <label class="checkbox-label" style="margin: 0; cursor: pointer; user-select: none;">
+        <input type="checkbox" name="enable_tracking" id="enable-tracking" value="1">
+        <span style="font-size: 13px;">Enable open tracking</span>
+      </label>
+      <small style="color: var(--text-muted); margin: 0; font-size: 11px;">
+        (adds tracking pixel — may increase spam risk)
+      </small>
+    </div>
+
+    <button type="submit" class="send-btn">Send Emails</button>
+  </div>
+
+  <!-- RIGHT COLUMN: Credentials + Predefined Usernames -->
+  <div class="dashboard-right">
+
+    <!-- Credential Selection -->
+    <fieldset>
+      <legend>Sender Credential</legend>
+      <label>Select Credential:</label>
+      <select name="selected_cred">
+        <option value="auto">Auto-assign (rotate)</option>
+        {% for email, _ in credentials %}
+          <option value="{{ loop.index }}">{{ loop.index }}. {{ email }}</option>
+        {% endfor %}
+      </select>
+
+      {% if credentials %}
+        <h4>Assigned Credentials:</h4>
+        <ul class="cred-list">
+          {% for email, _ in credentials %}
+            <li>
+              <div style="flex: 1;">
+                <span>{{ loop.index }}. {{ email }}</span>
+                {% if cred_usage %}
+                <div class="cred-usage-mini">
+                  <div class="cred-usage-bar-track" style="height: 4px; margin-top: 4px;">
+                    <div class="cred-usage-bar-fill" style="width: {{ (cred_usage[loop.index0].used / cred_usage[loop.index0].limit * 100)|round(1) }}%; background: {{ 'var(--danger)' if cred_usage[loop.index0].used > 400 else 'var(--success)' if cred_usage[loop.index0].used < 250 else '#d97706' }};"></div>
+                  </div>
+                  <small style="margin: 0; font-size: 10px;">{{ cred_usage[loop.index0].remaining }} left today</small>
+                </div>
+                {% endif %}
+              </div>
+              <div style="display: flex; gap: 4px;">
+                <button type="button" class="test-btn button small outline" data-index="{{ loop.index0 }}" title="Test credential">
+                  <span class="material-icons-round" style="font-size: 14px;">health_and_safety</span>
+                </button>
+                <button type="button" class="delete-btn button danger small" data-email="{{ email }}">Del</button>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+        <div id="test-result" style="display: none; margin-top: 8px; padding: 10px; border-radius: 8px; font-size: 12px;"></div>
+        <a href="{{ url_for('add_sender') }}" class="button small outline" style="margin-top: 6px;">
+          <span class="material-icons-round" style="font-size: 14px;">add</span> Add Sender
+        </a>
+      {% else %}
+        <p style="color: #ef4444;">
+          No credentials assigned. <a href="{{ url_for('add_sender') }}">Add Sender</a>.
+        </p>
+      {% endif %}
+    </fieldset>
+
+    <!-- Predefined Usernames (Checkboxes) -->
+    <fieldset>
+      <legend>Predefined Usernames</legend>
+      <div class="username-checkboxes">
+        {% for name in predefined_usernames %}
+          <label class="checkbox-label">
+            <input type="checkbox" name="selected_usernames" value="{{ name }}" checked>
+            {{ name }}
+          </label>
+        {% endfor %}
+      </div>
+      <div class="checkbox-actions">
+        <button type="button" id="select-all-btn" class="button small">Select All</button>
+        <button type="button" id="deselect-all-btn" class="button small outline">Deselect All</button>
+      </div>
+    </fieldset>
+
+  </div>
+
+</div>
+</form>
+
+<!-- Live Send Terminal -->
+<div id="terminal" class="send-terminal" style="display: none;">
+  <div class="terminal-header">
+    <span class="material-icons-round" style="font-size: 16px;">terminal</span>
+    <span>Send Progress</span>
+    <span id="terminal-status" class="terminal-status-text"></span>
+  </div>
+  <div id="terminal-output" class="terminal-output"></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Template dropdown -> auto-fill sender name placeholder
+  var templateSelect = document.getElementById('template-select');
+  var senderInput = document.getElementById('sender-name-input');
+
+  function updateSenderPlaceholder() {
+    var selected = templateSelect.options[templateSelect.selectedIndex];
+    var defaultName = selected.getAttribute('data-sender') || 'Whitehat';
+    senderInput.placeholder = defaultName + ' (template default)';
+  }
+  updateSenderPlaceholder();
+  templateSelect.addEventListener('change', updateSenderPlaceholder);
+
+  // Delete credential buttons
+  document.querySelectorAll('.delete-btn').forEach(function(button) {
+    button.addEventListener('click', function() {
+      var email = button.getAttribute('data-email');
+      if(confirm('Delete credential: ' + email + '?')) {
+        fetch('/delete-credential', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({'email': email})
+        })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+          if(data.success) {
+            alert('Credential deleted.');
+            window.location.reload();
+          } else {
+            alert('Failed to delete.');
+          }
+        })
+        .catch(function() { alert('An error occurred.'); });
+      }
+    });
+  });
+
+  // Select/Deselect all checkboxes
+  document.getElementById('select-all-btn').addEventListener('click', function() {
+    document.querySelectorAll('input[name="selected_usernames"]').forEach(function(cb) { cb.checked = true; });
+  });
+  document.getElementById('deselect-all-btn').addEventListener('click', function() {
+    document.querySelectorAll('input[name="selected_usernames"]').forEach(function(cb) { cb.checked = false; });
+  });
+
+  // Test credential buttons
+  document.querySelectorAll('.test-btn').forEach(function(button) {
+    button.addEventListener('click', function() {
+      var index = parseInt(button.getAttribute('data-index'));
+      var resultDiv = document.getElementById('test-result');
+      resultDiv.style.display = 'block';
+      resultDiv.style.background = 'var(--surface-2)';
+      resultDiv.style.border = '1px solid var(--border)';
+      resultDiv.innerHTML = '<span class="material-icons-round" style="font-size:14px;vertical-align:middle;">sync</span> Testing...';
+
+      fetch('/test_credential', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cred_index: index})
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var smtpColor = data.smtp.ok ? 'var(--success)' : 'var(--danger)';
+        var imapColor = data.imap.ok ? 'var(--success)' : 'var(--danger)';
+        resultDiv.innerHTML =
+          '<strong>' + data.email + '</strong><br>' +
+          '<span style="color:' + smtpColor + '">SMTP: ' + data.smtp.message + '</span><br>' +
+          '<span style="color:' + imapColor + '">IMAP: ' + data.imap.message + '</span><br>' +
+          '<span>Today: ' + data.daily_usage + '/' + data.daily_limit + ' (' + data.daily_remaining + ' remaining)</span>';
+        resultDiv.style.border = '1px solid ' + (data.smtp.ok && data.imap.ok ? 'var(--success)' : 'var(--danger)');
+      })
+      .catch(function() {
+        resultDiv.innerHTML = 'Error running test.';
+        resultDiv.style.border = '1px solid var(--danger)';
+      });
+    });
+  });
+});
+</script>
+
+{% endblock %}

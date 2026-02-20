@@ -1,0 +1,106 @@
+{% extends 'layout.html' %}
+{% block title %}Admin Panel{% endblock %}
+{% block content %}
+
+<h2>Admin Panel</h2>
+
+<fieldset>
+  <legend>Create User & Assign Credential</legend>
+  <form method="POST">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <label>Username:</label>
+    <input type="text" name="username" required>
+    <label>Password:</label>
+    <input type="password" name="password" required>
+    <label>Sender Email:</label>
+    <input type="email" name="email" required>
+    <label>App Password:</label>
+    <input type="text" name="apppass" required>
+    <button type="submit">Add User / Credential</button>
+  </form>
+</fieldset>
+
+<hr>
+
+<h3>Email Sending Logs</h3>
+<p style="color: var(--text-muted); font-size: 13px; margin-bottom: 12px;">
+  <span class="material-icons-round" style="font-size: 14px; vertical-align: middle;">lock</span>
+  Privacy: You can only view your own decrypted logs. Other users' domains and emails are encrypted.
+</p>
+<input type="text" id="search" placeholder="Search logs...">
+<button id="clearLogs" class="button danger" style="margin-bottom: 16px;">Clear All Logs</button>
+<table id="logsTable">
+  <thead>
+    <tr>
+      <th>Timestamp</th>
+      <th>User</th>
+      <th>Domain</th>
+      <th>Target Email</th>
+      <th>Sent From</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+<div id="pagination"></div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var currentPage = 1;
+    var perPage = 20;
+
+    function loadLogs(page, search) {
+        search = search || '';
+        fetch('/get_admin_logs?page=' + page + '&search=' + encodeURIComponent(search))
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                var tbody = document.querySelector('#logsTable tbody');
+                tbody.innerHTML = data.logs.length ? '' : '<tr><td colspan="5">No logs yet.</td></tr>';
+                data.logs.forEach(function(log) {
+                    var row = document.createElement('tr');
+                    row.innerHTML = '<td>' + log[0] + '</td><td>' + log[1] + '</td><td>' + log[2] + '</td><td>' + log[3] + '</td><td>' + log[4] + '</td>';
+                    tbody.appendChild(row);
+                });
+                updatePagination(data.total, data.current_page);
+            });
+    }
+
+    function updatePagination(total, current) {
+        var pages = Math.ceil(total / perPage);
+        var pagination = document.getElementById('pagination');
+        pagination.innerHTML = '';
+        for (var i = 1; i <= pages; i++) {
+            (function(pageNum) {
+                var button = document.createElement('button');
+                button.textContent = pageNum;
+                button.className = 'button' + (pageNum === current ? ' active' : '');
+                button.addEventListener('click', function() {
+                    currentPage = pageNum;
+                    loadLogs(pageNum, document.getElementById('search').value);
+                });
+                pagination.appendChild(button);
+            })(i);
+        }
+    }
+
+    document.getElementById('search').addEventListener('input', function() {
+        currentPage = 1;
+        loadLogs(currentPage, document.getElementById('search').value);
+    });
+
+    document.getElementById('clearLogs').addEventListener('click', function() {
+        if (confirm('Are you sure you want to clear all logs?')) {
+            fetch('/clear_admin_logs', { method: 'POST' })
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        loadLogs(1);
+                    }
+                });
+        }
+    });
+
+    loadLogs(currentPage);
+});
+</script>
+
+{% endblock %}

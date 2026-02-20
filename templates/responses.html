@@ -1,0 +1,152 @@
+{% extends 'layout.html' %}
+{% block title %}Responses{% endblock %}
+{% block content %}
+
+<h2>Email Responses</h2>
+<p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
+  Incoming emails that match addresses you've sent to are shown here.
+</p>
+
+<div style="display: flex; gap: 10px; margin-bottom: 20px;">
+  <button id="scan-btn" class="button">Scan for Responses</button>
+  <button id="refresh-btn" class="button outline">Refresh</button>
+</div>
+
+<div id="scan-status" style="margin-bottom: 12px;"></div>
+<div id="responses-list"></div>
+<div id="responses-pagination" style="margin-top: 15px; text-align: center;"></div>
+
+<!-- Response Detail Modal -->
+<div id="response-modal" class="email-modal-overlay" style="display: none;">
+  <div class="email-modal">
+    <div class="email-modal-header">
+      <h3 id="resp-modal-subject"></h3>
+      <button class="email-modal-close" onclick="closeRespModal()">&times;</button>
+    </div>
+    <div class="email-modal-meta">
+      <span id="resp-modal-from"></span>
+      <span id="resp-modal-date"></span>
+    </div>
+    <div class="email-modal-body" id="resp-modal-body"></div>
+    <div class="response-sent-info" id="resp-modal-sent-info"></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const scanBtn = document.getElementById('scan-btn');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const scanStatus = document.getElementById('scan-status');
+    const listDiv = document.getElementById('responses-list');
+    const paginationDiv = document.getElementById('responses-pagination');
+
+    function loadResponses(page) {
+        listDiv.innerHTML = '<div class="spinner"></div>';
+        paginationDiv.innerHTML = '';
+
+        fetch('/get_responses?page=' + page)
+            .then(r => r.json())
+            .then(data => {
+                listDiv.innerHTML = '';
+                if (data.error) {
+                    listDiv.innerHTML = '<p style="color: var(--danger);">' + data.error + '</p>';
+                    return;
+                }
+
+                if (data.responses.length === 0) {
+                    listDiv.innerHTML = '<p style="color: var(--text-muted);">No response matches found. Try clicking "Scan for Responses" after receiving emails.</p>';
+                    return;
+                }
+
+                data.responses.forEach(resp => {
+                    const div = document.createElement('div');
+                    div.className = 'response-card';
+                    div.style.cursor = 'pointer';
+                    div.onclick = () => showResponseDetail(resp);
+                    div.innerHTML = `
+                        <div class="response-card-header">
+                            <div>
+                                <strong>${resp.response_subject || '(No Subject)'}</strong>
+                                <div class="response-card-from">From: ${resp.response_from}</div>
+                            </div>
+                            <span class="email-date">${resp.response_date}</span>
+                        </div>
+                        <div class="response-card-preview">${resp.response_preview}</div>
+                        <div class="response-card-sent">
+                            <span class="material-icons-round" style="font-size: 14px;">send</span>
+                            Originally sent to: <strong>${resp.sent_to_email}</strong> (${resp.sent_to_domain}) via ${resp.sent_from}
+                        </div>
+                    `;
+                    listDiv.appendChild(div);
+                });
+
+                const totalPages = Math.ceil(data.total / data.per_page);
+                if (totalPages > 1) {
+                    for (let i = 1; i <= Math.min(totalPages, 10); i++) {
+                        const btn = document.createElement('button');
+                        btn.textContent = i;
+                        btn.className = 'button ' + (i === data.current_page ? 'active' : '');
+                        btn.style.margin = '0 3px';
+                        btn.onclick = () => loadResponses(i);
+                        paginationDiv.appendChild(btn);
+                    }
+                }
+            })
+            .catch(() => {
+                listDiv.innerHTML = '<p style="color: var(--danger);">Error loading responses.</p>';
+            });
+    }
+
+    scanBtn.addEventListener('click', () => {
+        scanBtn.disabled = true;
+        scanStatus.textContent = 'Scanning...';
+        fetch('/scan_responses', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        })
+        .then(r => r.json())
+        .then(data => {
+            scanBtn.disabled = false;
+            if (data.success) {
+                scanStatus.innerHTML = `<span style="color: var(--success);">Scan complete. ${data.new_matches} new match(es) found.</span>`;
+                loadResponses(1);
+            } else {
+                scanStatus.innerHTML = '<span style="color: var(--danger);">' + (data.error || 'Scan failed.') + '</span>';
+            }
+        })
+        .catch(() => {
+            scanBtn.disabled = false;
+            scanStatus.innerHTML = '<span style="color: var(--danger);">Error scanning.</span>';
+        });
+    });
+
+    refreshBtn.addEventListener('click', () => loadResponses(1));
+
+    loadResponses(1);
+});
+
+function showResponseDetail(resp) {
+    document.getElementById('resp-modal-subject').textContent = resp.response_subject || '(No Subject)';
+    document.getElementById('resp-modal-from').textContent = 'From: ' + resp.response_from;
+    document.getElementById('resp-modal-date').textContent = resp.response_date;
+    document.getElementById('resp-modal-body').textContent = resp.response_body || resp.response_preview;
+    document.getElementById('resp-modal-sent-info').innerHTML =
+        '<span class="material-icons-round" style="font-size: 16px; vertical-align: middle;">send</span> ' +
+        'Originally sent to <strong>' + resp.sent_to_email + '</strong> (' + resp.sent_to_domain + ') via ' + resp.sent_from +
+        ' on ' + resp.sent_date;
+    document.getElementById('response-modal').style.display = 'flex';
+}
+
+function closeRespModal() {
+    document.getElementById('response-modal').style.display = 'none';
+}
+
+document.addEventListener('click', (e) => {
+    if (e.target.id === 'response-modal') closeRespModal();
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeRespModal();
+});
+</script>
+
+{% endblock %}

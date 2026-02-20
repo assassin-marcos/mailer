@@ -1,0 +1,39 @@
+{% extends 'layout.html' %}
+{% block title %}Setup 2FA{% endblock %}
+{% block content %}
+
+<h2>Setup Two-Factor Authentication</h2>
+
+<fieldset>
+  <legend>Step 1 — Scan QR Code</legend>
+  <p style="color: var(--text-muted); margin-bottom: 16px;">
+    Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.):
+  </p>
+  <div style="background: #fff; padding: 20px; border-radius: var(--radius-sm); display: inline-block; border: 1px solid var(--border);">
+    {{ qr_svg|safe }}
+  </div>
+  <p style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">
+    Or enter this secret key manually: <code style="user-select: all; font-size: 13px; padding: 4px 8px; background: var(--surface-2); border-radius: 4px; letter-spacing: 2px;">{{ totp_secret }}</code>
+  </p>
+</fieldset>
+
+<fieldset style="margin-top: 20px;">
+  <legend>Step 2 — Verify Code</legend>
+  <form method="POST" action="{{ url_for('confirm_2fa') }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <p style="color: var(--text-muted); margin-bottom: 12px;">
+      Enter the 6-digit code from your authenticator app to confirm setup:
+    </p>
+    <label>Authentication Code:</label>
+    <input type="text" name="totp_code" required placeholder="000000" maxlength="6" pattern="\d{6}"
+           autocomplete="one-time-code" inputmode="numeric"
+           style="letter-spacing: 10px; font-size: 24px; text-align: center; font-weight: 700; max-width: 280px;">
+    <button type="submit" class="send-btn" style="margin-top: 12px;">Enable 2FA</button>
+  </form>
+</fieldset>
+
+<p style="margin-top: 20px; text-align: center;">
+  <a href="{{ url_for('profile') }}">&larr; Back to Profile</a>
+</p>
+
+{% endblock %}

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Mailer App{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <script src="{{ url_for('static', filename='js/send.js') }}" defer></script>
+</head>
+<body>
+  {% if current_user.is_authenticated %}
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span class="material-icons-round brand-icon">mail</span>
+      <span class="brand-text">Mailer</span>
+    </div>
+    <ul class="sidebar-nav">
+      <li><a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}"><span class="material-icons-round">dashboard</span><span>Dashboard</span></a></li>
+      <li>
+        <a href="{{ url_for('inbox') }}" class="{{ 'active' if request.endpoint == 'inbox' }}">
+          <span class="material-icons-round">inbox</span>
+          <span>Inbox</span>
+          <span id="unread-badge" class="unread-badge" style="display:none;"></span>
+        </a>
+      </li>
+      <li><a href="{{ url_for('responses_page') }}" class="{{ 'active' if request.endpoint == 'responses_page' }}"><span class="material-icons-round">reply_all</span><span>Responses</span></a></li>
+      <li><a href="{{ url_for('my_logs') }}" class="{{ 'active' if request.endpoint == 'my_logs' }}"><span class="material-icons-round">history</span><span>Sent Emails</span></a></li>
+      <li><a href="{{ url_for('templates_page') }}" class="{{ 'active' if request.endpoint == 'templates_page' }}"><span class="material-icons-round">description</span><span>Templates</span></a></li>
+      <li><a href="{{ url_for('export_page') }}" class="{{ 'active' if request.endpoint == 'export_page' }}"><span class="material-icons-round">file_download</span><span>Export</span></a></li>
+      <li><a href="{{ url_for('stats_page') }}" class="{{ 'active' if request.endpoint == 'stats_page' }}"><span class="material-icons-round">bar_chart</span><span>Stats</span></a></li>
+      <li class="nav-divider"></li>
+      <li><a href="{{ url_for('add_sender') }}" class="{{ 'active' if request.endpoint == 'add_sender' }}"><span class="material-icons-round">person_add</span><span>Add Sender</span></a></li>
+      <li><a href="{{ url_for('change_password') }}" class="{{ 'active' if request.endpoint == 'change_password' }}"><span class="material-icons-round">lock</span><span>Password</span></a></li>
+      <li><a href="{{ url_for('profile') }}" class="{{ 'active' if request.endpoint == 'profile' }}"><span class="material-icons-round">account_circle</span><span>Profile</span></a></li>
+      {% if current_user.role == 'admin' %}
+      <li class="nav-divider"></li>
+      <li><a href="{{ url_for('admin') }}" class="{{ 'active' if request.endpoint == 'admin' }}"><span class="material-icons-round">admin_panel_settings</span><span>Admin</span></a></li>
+      <li><a href="{{ url_for('admin_profiles') }}" class="{{ 'active' if request.endpoint == 'admin_profiles' }}"><span class="material-icons-round">group</span><span>Users</span></a></li>
+      {% endif %}
+    </ul>
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <span class="material-icons-round">person</span>
+        <span>{{ current_user.id }}</span>
+      </div>
+      <a href="#" id="dark-mode-toggle" class="logout-link" style="color: rgba(255,255,255,.65);">
+        <span class="material-icons-round" id="theme-icon">dark_mode</span>
+        <span id="theme-label">Dark Mode</span>
+      </a>
+      <a href="{{ url_for('logout') }}" class="logout-link"><span class="material-icons-round">logout</span><span>Logout</span></a>
+    </div>
+  </nav>
+  {% endif %}
+
+  <main class="{{ 'with-sidebar' if current_user.is_authenticated else '' }}">
+    {% if current_user.is_authenticated %}
+    <button class="mobile-toggle" id="mobileToggle" type="button">
+      <span class="material-icons-round">menu</span>
+    </button>
+    {% endif %}
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash-container">
+          {% for message in messages %}
+            <div class="alert-toast">
+              <span class="material-icons-round">info</span>
+              <span>{{ message }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="page-content">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <script>
+    const toggle = document.getElementById('mobileToggle');
+    const sidebar = document.getElementById('sidebar');
+    if (toggle && sidebar) {
+      toggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+      document.addEventListener('click', (e) => {
+        if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && e.target !== toggle && !toggle.contains(e.target)) {
+          sidebar.classList.remove('open');
+        }
+      });
+    }
+
+    // Fetch unread count for sidebar badge
+    (function() {
+      const badge = document.getElementById('unread-badge');
+      if (!badge) return;
+      fetch('/unread_count')
+        .then(r => r.json())
+        .then(data => {
+          if (data.count > 0) {
+            badge.textContent = data.count;
+            badge.style.display = 'inline-flex';
+          }
+        })
+        .catch(() => {});
+    })();
+
+    // Dark mode toggle
+    (function() {
+      var darkToggle = document.getElementById('dark-mode-toggle');
+      var themeIcon = document.getElementById('theme-icon');
+      var themeLabel = document.getElementById('theme-label');
+      if (!darkToggle) return;
+
+      function applyTheme(isDark) {
+        if (isDark) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          if (themeIcon) themeIcon.textContent = 'light_mode';
+          if (themeLabel) themeLabel.textContent = 'Light Mode';
+        } else {
+          document.documentElement.removeAttribute('data-theme');
+          if (themeIcon) themeIcon.textContent = 'dark_mode';
+          if (themeLabel) themeLabel.textContent = 'Dark Mode';
+        }
+      }
+
+      // Check saved preference
+      fetch('/get_theme')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { applyTheme(data.dark_mode); })
+        .catch(function() {});
+
+      darkToggle.addEventListener('click', function(e) {
+        e.preventDefault();
+        fetch('/toggle_dark_mode', { method: 'POST', headers: {'Content-Type': 'application/json'} })
+          .then(function(r) { return r.json(); })
+          .then(function(data) { applyTheme(data.dark_mode); })
+          .catch(function() {});
+      });
+    })();
+  </script>
+</body>
+</html>

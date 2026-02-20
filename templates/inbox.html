@@ -1,0 +1,389 @@
+{% extends 'layout.html' %}
+{% block title %}Inbox{% endblock %}
+{% block content %}
+
+<h2>Email Inbox Reader</h2>
+
+{% if credentials %}
+<fieldset>
+  <legend>Select Account</legend>
+  <select id="inbox-account">
+    <option value="all" selected>All Accounts (Recent)</option>
+    {% for email, _ in credentials %}
+      <option value="{{ loop.index0 }}">{{ email }}</option>
+    {% endfor %}
+  </select>
+
+  <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center;">
+    <button id="fetch-btn" class="button">Fetch Live</button>
+    <button id="cached-btn" class="button outline">Load Cached</button>
+    <button id="mark-all-read-btn" class="button outline" style="border-color: var(--primary);">
+      <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">done_all</span> Mark All Read
+    </button>
+    <button id="purge-bounces-btn" class="button danger small">
+      <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">delete_sweep</span> Purge Bounces
+    </button>
+    <button id="clear-cache-btn" class="button danger small">Clear Cache</button>
+  </div>
+
+  <!-- Filters Row -->
+  <div style="display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; align-items: center;">
+    <label class="checkbox-label" style="font-size: 13px; cursor: pointer;">
+      <input type="checkbox" id="hide-bounces" checked>
+      Hide bounces &amp; auto-replies
+    </label>
+    <div style="flex: 1; min-width: 200px;">
+      <input type="text" id="inbox-search" placeholder="Search sender, subject, or body..." style="width: 100%; padding: 6px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text);">
+    </div>
+    <button id="search-btn" class="button small outline" style="padding: 6px 12px;">
+      <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">search</span> Search
+    </button>
+  </div>
+
+  <small style="display: block; margin-top: 8px; color: var(--text-muted);">
+    <strong>Fetch Live:</strong> Connect to Gmail IMAP (select specific account).
+    <strong>Load Cached:</strong> View auto-fetched emails.
+    <strong>Purge Bounces:</strong> Permanently delete all bounce/NDR emails from cache.
+  </small>
+</fieldset>
+{% else %}
+<p style="color: #ef4444;">No credentials assigned. Add via <a href="{{ url_for('add_sender') }}">Add Sender</a>.</p>
+{% endif %}
+
+<div id="auto-fetch-badge" class="auto-fetch-badge" style="display: none;">
+  <span class="material-icons-round" style="font-size: 16px;">sync</span>
+  <span>Auto-fetch active — emails cached every hour</span>
+</div>
+
+<div id="inbox-spinner" class="spinner" style="display: none;"></div>
+<div id="inbox-status" style="margin-top: 10px;"></div>
+
+<div id="inbox-results" style="margin-top: 20px;"></div>
+<div id="inbox-pagination" style="margin-top: 15px; text-align: center;"></div>
+
+<!-- Email Detail Modal (appended to body via JS for proper fixed positioning) -->
+<script>
+(function() {
+    var overlay = document.createElement('div');
+    overlay.id = 'email-modal';
+    overlay.className = 'email-modal-overlay';
+    overlay.style.display = 'none';
+    overlay.onclick = function(e) { if (e.target === overlay) closeModal(); };
+    overlay.innerHTML =
+        '<div class="email-modal">' +
+            '<div class="email-modal-header">' +
+                '<h3 id="modal-subject"></h3>' +
+                '<button class="email-modal-close" onclick="closeModal()" type="button">&times;</button>' +
+            '</div>' +
+            '<div class="email-modal-meta">' +
+                '<span id="modal-from"></span>' +
+                '<span id="modal-date"></span>' +
+            '</div>' +
+            '<div class="email-modal-body" id="modal-body"></div>' +
+        '</div>';
+    document.body.appendChild(overlay);
+})();
+
+function openModal(subject, from, date, body) {
+    document.getElementById('modal-subject').textContent = subject || '(No Subject)';
+    document.getElementById('modal-from').textContent = 'From: ' + (from || '');
+    document.getElementById('modal-date').textContent = date || '';
+    document.getElementById('modal-body').textContent = body || '(No content)';
+    var modal = document.getElementById('email-modal');
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+    document.getElementById('email-modal').style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    var fetchBtn = document.getElementById('fetch-btn');
+    var cachedBtn = document.getElementById('cached-btn');
+    var clearCacheBtn = document.getElementById('clear-cache-btn');
+    var markAllReadBtn = document.getElementById('mark-all-read-btn');
+    var purgeBouncesBtn = document.getElementById('purge-bounces-btn');
+    var searchBtn = document.getElementById('search-btn');
+    var searchInput = document.getElementById('inbox-search');
+    var hideBouncesCheckbox = document.getElementById('hide-bounces');
+    if (!fetchBtn) return;
+
+    var spinner = document.getElementById('inbox-spinner');
+    var statusDiv = document.getElementById('inbox-status');
+    var resultsDiv = document.getElementById('inbox-results');
+    var paginationDiv = document.getElementById('inbox-pagination');
+    var accountSelect = document.getElementById('inbox-account');
+    var autoFetchBadge = document.getElementById('auto-fetch-badge');
+
+    var currentMode = 'recent'; // Track current view mode
+
+    fetch('/auto_fetch_status')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { if (data.active) autoFetchBadge.style.display = 'flex'; })
+        .catch(function() {});
+
+    function getFilterParams() {
+        return {
+            hide_bounces: hideBouncesCheckbox.checked,
+            search: searchInput.value.trim()
+        };
+    }
+
+    function updateUnreadBadge() {
+        fetch('/unread_count').then(function(r) { return r.json(); }).then(function(d) {
+            var ub = document.getElementById('unread-badge');
+            if (ub) {
+                if (d.count > 0) { ub.textContent = d.count; ub.style.display = 'inline-flex'; }
+                else { ub.style.display = 'none'; }
+            }
+        }).catch(function() {});
+    }
+
+    function renderEmails(data, mode) {
+        spinner.style.display = 'none';
+        currentMode = mode;
+        if (data.error) { statusDiv.textContent = 'Error: ' + data.error; return; }
+
+        var totalPages = Math.ceil(data.total / data.per_page);
+        var modeLabel = mode === 'recent' ? 'Recent (All Accounts)' : mode === 'cached' ? 'Cached' : 'Live';
+        var bounceNote = hideBouncesCheckbox.checked ? ' — bounces hidden' : '';
+        var searchNote = searchInput.value.trim() ? ' — filtered' : '';
+        statusDiv.textContent = '[' + modeLabel + '] ' + (totalPages > 1 ? 'Page ' + data.current_page + '/' + totalPages + ' — ' : '') + data.total + ' emails' + bounceNote + searchNote;
+
+        if (data.emails.length === 0) {
+            resultsDiv.innerHTML = '<p style="color: var(--text-muted);">No emails found.' + (searchInput.value.trim() ? ' Try a different search.' : ' Try "Fetch Live" or wait for auto-fetch.') + '</p>';
+            return;
+        }
+
+        for (var i = 0; i < data.emails.length; i++) {
+            (function(email) {
+                var div = document.createElement('div');
+                var isUnread = email.is_read === 0 && (mode === 'cached' || mode === 'recent');
+                div.className = 'email-item' + (isUnread ? ' email-unread' : ' email-read');
+                if (email.is_bounce) div.className += ' email-bounce';
+                div.style.cursor = 'pointer';
+
+                var emailBody = email.full_body || email.preview || '(No content)';
+                var emailSubject = email.subject || '(No Subject)';
+                var emailFrom = email.from || '';
+                var emailDate = email.date || '';
+                var emailId = email.id;
+
+                div.addEventListener('click', function() {
+                    openModal(emailSubject, emailFrom, emailDate, emailBody);
+                    if ((mode === 'cached' || mode === 'recent') && emailId) {
+                        div.classList.remove('email-unread');
+                        div.classList.add('email-read');
+                        var badge = div.querySelector('.new-badge');
+                        if (badge) badge.remove();
+                        fetch('/mark_read/' + emailId, { method: 'POST', headers: {'Content-Type': 'application/json'} })
+                        .then(function() { updateUnreadBadge(); })
+                        .catch(function() {});
+                    }
+                });
+
+                var badges = isUnread ? '<span class="new-badge">New</span>' : '';
+                var bounceTag = email.is_bounce ? '<span style="font-size:10px;color:#ef4444;background:rgba(239,68,68,0.1);padding:2px 8px;border-radius:10px;margin-left:6px;font-weight:600;">Bounce</span>' : '';
+                var accountTag = email.account ? '<span style="font-size:10px;color:var(--primary);background:var(--primary-ghost);padding:2px 8px;border-radius:10px;margin-left:6px;font-weight:600;">' + email.account + '</span>' : '';
+                var fetchedInfo = email.fetched_at ? '<span class="email-cached-badge">Cached ' + email.fetched_at + '</span>' : '';
+
+                div.innerHTML =
+                    '<div class="email-header">' +
+                        '<strong>' + badges + (email.subject || '(No Subject)') + bounceTag + '</strong>' +
+                        '<span class="email-date">' + (email.date || '') + '</span>' +
+                    '</div>' +
+                    '<div class="email-from">From: ' + (email.from || '') + accountTag + '</div>' +
+                    fetchedInfo +
+                    '<div class="email-preview">' + (email.preview || '') + (email.preview && email.preview.length >= 300 ? '...' : '') + '</div>';
+
+                resultsDiv.appendChild(div);
+            })(data.emails[i]);
+        }
+
+        if (totalPages > 1 && mode !== 'recent') {
+            var maxShow = Math.min(totalPages, 10);
+            for (var p = 1; p <= maxShow; p++) {
+                (function(pageNum) {
+                    var btn = document.createElement('button');
+                    btn.textContent = pageNum;
+                    btn.className = 'button' + (pageNum === data.current_page ? ' active' : '');
+                    btn.style.margin = '0 3px';
+                    btn.addEventListener('click', function() {
+                        if (mode === 'cached') fetchCached(pageNum);
+                        else fetchLive(pageNum);
+                    });
+                    paginationDiv.appendChild(btn);
+                })(p);
+            }
+            if (totalPages > 10) {
+                var span = document.createElement('span');
+                span.textContent = ' ... ' + totalPages + ' pages';
+                span.style.marginLeft = '10px';
+                paginationDiv.appendChild(span);
+            }
+        }
+    }
+
+    function fetchRecent() {
+        spinner.style.display = 'block';
+        statusDiv.textContent = '';
+        resultsDiv.innerHTML = '';
+        paginationDiv.innerHTML = '';
+        var params = getFilterParams();
+        fetch('/cached_inbox_recent', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(params)
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) { renderEmails(data, 'recent'); })
+        .catch(function(err) { spinner.style.display = 'none'; statusDiv.textContent = 'Error: ' + err.message; });
+    }
+
+    function fetchLive(page) {
+        var acctVal = accountSelect.value;
+        if (acctVal === 'all') { alert('Select a specific account to fetch live.'); return; }
+        spinner.style.display = 'block';
+        statusDiv.textContent = 'Fetching live from Gmail...';
+        resultsDiv.innerHTML = '';
+        paginationDiv.innerHTML = '';
+        var params = getFilterParams();
+        params.cred_index = parseInt(acctVal);
+        params.page = page;
+        fetch('/fetch_inbox', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(params) })
+        .then(function(r) { return r.json(); })
+        .then(function(data) { renderEmails(data, 'live'); })
+        .catch(function(err) { spinner.style.display = 'none'; statusDiv.textContent = 'Error: ' + err.message; });
+    }
+
+    function fetchCached(page) {
+        var acctVal = accountSelect.value;
+        if (acctVal === 'all') { fetchRecent(); return; }
+        spinner.style.display = 'block';
+        statusDiv.textContent = 'Loading cached emails...';
+        resultsDiv.innerHTML = '';
+        paginationDiv.innerHTML = '';
+        var params = getFilterParams();
+        params.cred_index = parseInt(acctVal);
+        params.page = page;
+        fetch('/cached_inbox', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(params)
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) { renderEmails(data, 'cached'); })
+        .catch(function(err) { spinner.style.display = 'none'; statusDiv.textContent = 'Error: ' + err.message; });
+    }
+
+    function refreshCurrentView() {
+        if (currentMode === 'recent' || accountSelect.value === 'all') {
+            fetchRecent();
+        } else {
+            fetchCached(1);
+        }
+    }
+
+    fetchBtn.addEventListener('click', function() { fetchLive(1); });
+    cachedBtn.addEventListener('click', function() { fetchCached(1); });
+
+    // Search: trigger on button click or Enter key
+    searchBtn.addEventListener('click', function() { refreshCurrentView(); });
+    searchInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); refreshCurrentView(); }
+    });
+
+    // Re-filter when bounce toggle changes
+    hideBouncesCheckbox.addEventListener('change', function() { refreshCurrentView(); });
+
+    // Mark All Read
+    markAllReadBtn.addEventListener('click', function() {
+        var acctVal = accountSelect.value;
+        var label = acctVal === 'all' ? 'ALL accounts' : 'selected account';
+        if (!confirm('Mark all emails as read for ' + label + '?')) return;
+        var body = acctVal === 'all' ? { cred_index: 'all' } : { cred_index: parseInt(acctVal) };
+        markAllReadBtn.disabled = true;
+        markAllReadBtn.textContent = 'Marking...';
+        fetch('/mark_all_read', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            markAllReadBtn.disabled = false;
+            markAllReadBtn.innerHTML = '<span class="material-icons-round" style="font-size:14px;vertical-align:middle;">done_all</span> Mark All Read';
+            if (data.success) {
+                statusDiv.textContent = 'Marked ' + (data.updated || 0) + ' emails as read.';
+                updateUnreadBadge();
+                // Refresh current view to update visual state
+                refreshCurrentView();
+            } else {
+                statusDiv.textContent = 'Error: ' + (data.error || 'Failed.');
+            }
+        })
+        .catch(function(err) {
+            markAllReadBtn.disabled = false;
+            markAllReadBtn.innerHTML = '<span class="material-icons-round" style="font-size:14px;vertical-align:middle;">done_all</span> Mark All Read';
+            statusDiv.textContent = 'Error: ' + err.message;
+        });
+    });
+
+    // Purge Bounces
+    purgeBouncesBtn.addEventListener('click', function() {
+        if (!confirm('Permanently delete all bounce/NDR/auto-reply emails from cache?\n\nThis cannot be undone.')) return;
+        purgeBouncesBtn.disabled = true;
+        purgeBouncesBtn.textContent = 'Purging...';
+        fetch('/delete_bounces', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            purgeBouncesBtn.disabled = false;
+            purgeBouncesBtn.innerHTML = '<span class="material-icons-round" style="font-size:14px;vertical-align:middle;">delete_sweep</span> Purge Bounces';
+            if (data.success) {
+                statusDiv.textContent = 'Purged ' + (data.deleted || 0) + ' bounce emails.';
+                updateUnreadBadge();
+                refreshCurrentView();
+            } else {
+                statusDiv.textContent = 'Error: ' + (data.error || 'Failed.');
+            }
+        })
+        .catch(function(err) {
+            purgeBouncesBtn.disabled = false;
+            purgeBouncesBtn.innerHTML = '<span class="material-icons-round" style="font-size:14px;vertical-align:middle;">delete_sweep</span> Purge Bounces';
+            statusDiv.textContent = 'Error: ' + err.message;
+        });
+    });
+
+    // Clear Cache
+    clearCacheBtn.addEventListener('click', function() {
+        var acctVal = accountSelect.value;
+        if (acctVal === 'all') { alert('Select a specific account to clear cache.'); return; }
+        if (!confirm('Delete all cached emails for this account?')) return;
+        fetch('/clear_inbox_cache', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ cred_index: parseInt(acctVal) }) })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                resultsDiv.innerHTML = '<p style="color: var(--text-muted);">Cache cleared.</p>';
+                paginationDiv.innerHTML = '';
+                statusDiv.textContent = 'Cache cleared. ' + (data.deleted || 0) + ' emails removed.';
+                updateUnreadBadge();
+            } else { statusDiv.textContent = 'Error: ' + (data.error || 'Failed.'); }
+        })
+        .catch(function(err) { statusDiv.textContent = 'Error: ' + err.message; });
+    });
+
+    // AUTO-LOAD recent emails from all accounts on page load
+    fetchRecent();
+});
+</script>
+
+<style>
+.email-bounce {
+    opacity: 0.6;
+    border-left: 3px solid #ef4444 !important;
+}
+</style>
+
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends 'layout.html' %}
+{% block title %}Reset Password{% endblock %}
+{% block content %}
+
+<h2>Reset Password</h2>
+
+<!-- Step 1: Request OTP -->
+<fieldset id="step-request">
+  <legend>Step 1 — Request OTP</legend>
+  <label>Username:</label>
+  <input type="text" id="reset-username" required placeholder="Your username" autocomplete="username">
+  <button type="button" id="request-otp-btn" class="send-btn">Send OTP to My Email</button>
+  <div id="otp-request-status" style="display: none; margin-top: 10px; padding: 10px 14px; border-radius: 8px; font-size: 13px;"></div>
+  <small style="margin-top: 8px;">An OTP will be sent to the email linked to your account (profile email or credential email).</small>
+</fieldset>
+
+<!-- Step 2: Enter OTP + New Password -->
+<fieldset id="step-reset" style="display: none;">
+  <legend>Step 2 — Set New Password</legend>
+  <form method="POST" action="{{ url_for('reset_with_otp') }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+    <label>Username:</label>
+    <input type="text" name="username" id="reset-username-confirm" required placeholder="Your username" autocomplete="username">
+
+    <label>OTP (check your email):</label>
+    <input type="text" name="otp" required placeholder="6-digit OTP" maxlength="6" pattern="\d{6}" autocomplete="one-time-code" style="letter-spacing: 8px; font-size: 20px; text-align: center; font-weight: 700;">
+
+    <label>New Password:</label>
+    <input type="password" name="new_password" required placeholder="Minimum 6 characters" minlength="6" autocomplete="new-password">
+
+    <button type="submit" class="send-btn">Reset Password</button>
+  </form>
+  <small style="margin-top: 8px;">OTP expires in 10 minutes.</small>
+</fieldset>
+
+<p style="margin-top: 20px; text-align: center;"><a href="{{ url_for('login') }}">← Back to Login</a></p>
+
+<script>
+document.getElementById('request-otp-btn').addEventListener('click', function() {
+    var username = document.getElementById('reset-username').value.trim();
+    if (!username) { alert('Enter your username.'); return; }
+
+    var statusDiv = document.getElementById('otp-request-status');
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    statusDiv.style.display = 'block';
+    statusDiv.style.background = 'var(--surface-2)';
+    statusDiv.style.border = '1px solid var(--border)';
+    statusDiv.style.color = 'var(--text)';
+    statusDiv.textContent = 'Sending OTP...';
+
+    fetch('/request_otp', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username: username})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        btn.disabled = false;
+        btn.textContent = 'Send OTP to My Email';
+        if (data.success) {
+            statusDiv.style.background = 'var(--success-bg)';
+            statusDiv.style.border = '1px solid var(--success)';
+            statusDiv.style.color = '#065f46';
+            statusDiv.textContent = data.message;
+            // Show step 2
+            document.getElementById('step-reset').style.display = 'block';
+            document.getElementById('reset-username-confirm').value = username;
+            document.getElementById('step-reset').scrollIntoView({behavior: 'smooth'});
+        } else {
+            statusDiv.style.background = 'var(--danger-bg)';
+            statusDiv.style.border = '1px solid var(--danger)';
+            statusDiv.style.color = '#991b1b';
+            statusDiv.textContent = data.error || 'Failed to send OTP.';
+        }
+    })
+    .catch(function() {
+        btn.disabled = false;
+        btn.textContent = 'Send OTP to My Email';
+        statusDiv.style.background = 'var(--danger-bg)';
+        statusDiv.style.border = '1px solid var(--danger)';
+        statusDiv.style.color = '#991b1b';
+        statusDiv.textContent = 'Network error. Try again.';
+    });
+});
+</script>
+
+{% endblock %}

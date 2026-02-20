@@ -1,0 +1,187 @@
+{% extends 'layout.html' %}
+{% block title %}Email Templates{% endblock %}
+{% block content %}
+
+<h2>Email Templates</h2>
+
+<!-- Create New Template -->
+<fieldset>
+  <legend>Create New Template</legend>
+  <form method="POST" action="{{ url_for('add_template') }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+    <label>Template Name:</label>
+    <input type="text" name="name" required placeholder="e.g., Pentest Inquiry">
+
+    <label>Sender Display Name:</label>
+    <input type="text" name="sender_name" value="Whitehat" required placeholder="e.g., Security Researcher">
+    <small>This name appears as the "From" name in sent emails. Use {sender_name} in body to reference it.</small>
+
+    <label>Email Subject:</label>
+    <input type="text" name="subject" required placeholder="e.g., Security Assessment Report">
+
+    <label>Email Body:</label>
+    <textarea name="body" rows="8" required placeholder="Hello Team,&#10;&#10;Your message here...&#10;&#10;Best regards,&#10;{sender_name}"></textarea>
+    <small>Available variables: <code>{sender_name}</code>, <code>{domain}</code> (target domain), <code>{email}</code> (recipient email), <code>{date}</code> (current date), <code>{time}</code> (current time IST).</small>
+
+    <button type="button" class="button outline" onclick="togglePreview()" style="margin-top: 6px; margin-bottom: 10px;">
+      <span class="material-icons-round" style="font-size: 16px;">visibility</span> Preview
+    </button>
+    <button type="submit">Create Template</button>
+  </form>
+
+  <!-- Live Preview Panel -->
+  <div id="template-preview" style="display: none; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+      <h4 style="margin: 0;">Live Preview</h4>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <input type="text" id="preview-domain" placeholder="example.com" value="example.com" style="width: 140px; margin: 0; padding: 6px 10px; font-size: 12px;">
+        <small style="margin: 0; white-space: nowrap;">Sample domain</small>
+      </div>
+    </div>
+    <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;">
+      <div style="padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-muted);">
+        <strong style="color: var(--text);">From:</strong> <span id="preview-from"></span>
+      </div>
+      <div style="padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-muted);">
+        <strong style="color: var(--text);">Subject:</strong> <span id="preview-subject"></span>
+      </div>
+      <div id="preview-body" style="padding: 16px; font-size: 13px; line-height: 1.7; color: var(--text); white-space: pre-wrap; word-break: break-word;"></div>
+    </div>
+  </div>
+</fieldset>
+
+<hr>
+
+<!-- Existing Templates -->
+<h3>Your Templates</h3>
+
+{% for tmpl in templates %}
+<div class="template-card" id="tmpl-{{ tmpl.id }}">
+  <div class="template-header">
+    <div class="template-title">
+      <strong>{{ tmpl.name }}</strong>
+      {% if tmpl.is_default %}
+        <span class="badge-default">Default</span>
+      {% endif %}
+    </div>
+    <div class="template-actions">
+      <button type="button" class="button small outline" onclick="toggleEdit({{ tmpl.id }})">Edit</button>
+      {% if not tmpl.is_default %}
+        <button type="button" class="button small danger" onclick="deleteTemplate({{ tmpl.id }}, '{{ tmpl.name }}')">Delete</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="template-meta">
+    <span><strong>Sender:</strong> {{ tmpl.sender_name }}</span>
+    <span><strong>Subject:</strong> {{ tmpl.subject }}</span>
+  </div>
+
+  <div class="template-body-preview">{{ tmpl.body[:200] }}{% if tmpl.body|length > 200 %}...{% endif %}</div>
+
+  <!-- Edit Form (hidden by default) -->
+  <div class="template-edit" id="edit-{{ tmpl.id }}" style="display: none;">
+    <form method="POST" action="{{ url_for('edit_template', template_id=tmpl.id) }}">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+      <label>Template Name:</label>
+      <input type="text" name="name" value="{{ tmpl.name }}" required>
+
+      <label>Sender Display Name:</label>
+      <input type="text" name="sender_name" value="{{ tmpl.sender_name }}" required>
+
+      <label>Email Subject:</label>
+      <input type="text" name="subject" value="{{ tmpl.subject }}" required>
+
+      <label>Email Body:</label>
+      <textarea name="body" rows="8" required>{{ tmpl.body }}</textarea>
+
+      <div class="template-edit-actions">
+        <button type="submit">Save Changes</button>
+        <button type="button" class="button outline" onclick="toggleEdit({{ tmpl.id }})">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endfor %}
+
+{% if not templates %}
+  <p style="color: var(--text-muted);">No templates yet. Create one above.</p>
+{% endif %}
+
+<script>
+function toggleEdit(id) {
+  const editDiv = document.getElementById('edit-' + id);
+  editDiv.style.display = editDiv.style.display === 'none' ? 'block' : 'none';
+}
+
+function deleteTemplate(id, name) {
+  if (!confirm('Delete template "' + name + '"?')) return;
+  fetch('/delete-template/' + id, { method: 'POST' })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        document.getElementById('tmpl-' + id).remove();
+      } else {
+        alert(data.error || 'Failed to delete.');
+      }
+    })
+    .catch(() => alert('Error deleting template.'));
+}
+
+// Live Template Preview
+function togglePreview() {
+    var panel = document.getElementById('template-preview');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        updatePreview();
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+function expandVars(text, vars) {
+    return text
+        .replace(/\{sender_name\}/g, vars.sender_name)
+        .replace(/\{domain\}/g, vars.domain)
+        .replace(/\{email\}/g, vars.email)
+        .replace(/\{date\}/g, vars.date)
+        .replace(/\{time\}/g, vars.time);
+}
+
+function updatePreview() {
+    var form = document.querySelector('form[action*="add-template"]');
+    if (!form) return;
+    var senderName = form.querySelector('[name="sender_name"]').value || 'Whitehat';
+    var subject = form.querySelector('[name="subject"]').value || '(No subject)';
+    var body = form.querySelector('[name="body"]').value || '(No body)';
+    var domain = document.getElementById('preview-domain').value || 'example.com';
+    var email = 'contact@' + domain;
+    var now = new Date();
+    var dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
+    var timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) + ' IST';
+
+    var vars = { sender_name: senderName, domain: domain, email: email, date: dateStr, time: timeStr };
+
+    document.getElementById('preview-from').textContent = senderName + ' <sender@gmail.com>';
+    document.getElementById('preview-subject').textContent = expandVars(subject, vars);
+    document.getElementById('preview-body').textContent = expandVars(body, vars);
+}
+
+// Auto-update preview on input
+document.addEventListener('DOMContentLoaded', function() {
+    var form = document.querySelector('form[action*="add-template"]');
+    if (!form) return;
+    var inputs = form.querySelectorAll('input, textarea');
+    inputs.forEach(function(el) {
+        el.addEventListener('input', function() {
+            if (document.getElementById('template-preview').style.display !== 'none') updatePreview();
+        });
+    });
+    var domainInput = document.getElementById('preview-domain');
+    if (domainInput) domainInput.addEventListener('input', updatePreview);
+});
+</script>
+
+{% endblock %}
